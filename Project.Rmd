@@ -1,5 +1,5 @@
 ---
-title: "Train an Algorithm to Detect Qaulity of Exercise"
+title: "Train an Algorithm to Detect Quality of Exercise"
 author: "peter partch"
 date: "October 25, 2015"
 output: html_document
@@ -7,7 +7,7 @@ output: html_document
 
 ## Synopsis
 
-Using acceleromiter data collected from 6 participants with sensors on belt, arm, and dumbell and instructed to do a set of excersizes in a range of quality from bad to good. This paper describes a set of machine learning techniques applied to the collected training data in hopes of accuralty predicting the excersize quaility. Several attempts were attempted using various technquies with the final result using random forest.
+Using accelerometer data collected from 6 participants with sensors on belt, arm, and dumbbell and instructed to do a set of exercises in a range of quality from bad to good. This paper describes a set of machine learning techniques applied to the collected training data in hopes of accuracy predicting the exercise quality. Several attempts were attempted using various techniques with the final result using random forest.
 
 *NOTE*: I wished to also experiment with running R on **Amazon Web Services** to leverage much greater compute ability. I'll provide some details on the server capability used to produce my results along with a separate document on how to setup an AWS instance for R processing and using RStudio remotely. The final model was fitted using a 16 virtual CPU machine with 122 Gbytes of RAM using the caret package train function configured to run 122 minutes. Also an effort to leverage as many cores as possible was made using the doParallel package. (I did not have the time or cash to try a AWS cluster of machines...but this would be a very interesting next step in this study). This implies that if you wish to reproduce my model fit, you will probably need to run my finial train tune parameters on a very large machine.
 
@@ -15,7 +15,7 @@ I was hoping for an accuracy in the 90% range and actually produced a in-train a
 
 The final model fit was performed with random forest for a training accuracy of 99.69%, Kappa of 0.9961 and a validation accuracy of 99.68% (an indication of out-of-sample accuracy)
 
-**Last Minute Update**: Just before deadline, I tried a Stochastic Gradient Boosting algorithm that produced 99.29%-99.40% accurancy within a couple minutes of training (on a multi core machine) depending on seed. This was after reducing the input data set to only the following columns (all, except for num_window, show relativly high variance):
+**Last Minute Update**: Just before deadline, I tried a Stochastic Gradient Boosting algorithm that produced 99.29%-99.40% accuracy within a couple minutes of training (on a multi core machine) depending on seed. This was after reducing the input data set to only the following columns (all, except for num_window, show relatively high variance):
 ```{r,eval=FALSE}
 savenames <- c("num_window","roll_belt","pitch_belt","yaw_belt","roll_arm","pitch_arm","yaw_arm","roll_forearm","pitch_forearm","yaw_forearm","classe")
 useIndexs <- which(names(cleandata) %in% savenames)
@@ -27,13 +27,15 @@ saveRDS(modelFitGBM,"modelFitGBM.rds")
 ```
 Too late to update this report, but I'll suggest that this result along with the random forest might be a good choice to stack (combining predictors)
 
+**Really Last minute update**: Adjusting my features now gets me a 99.8% accuracy (I'll leave the rds file in my repository)
+
 ### Additional Details and Notes
 
 * The original study of Human Activity Recognition can be found here <http://groupware.les.inf.puc-rio.br/har>.
 * A description of how I setup an AWS instance to run R can be found here: <http://pmpartch.github.io/MachineLearning_project/RonAWS.html>
 
 ## Data Processing
-The following sections describe the cleaning and factoring of the data into a training set and verification set. Some preliminary exploritory views of the data and then the model training. Note that due to how I generated the model, it will not be feasable to replicate the work on a home machine. I'll provide a stand alone R script that can be run on an AWS server if one cares to do so (it will take 121 minutes of processing).
+The following sections describe the cleaning and factoring of the data into a training set and verification set. Some preliminary exploratory views of the data and then the model training. Note that due to how I generated the model, it will not be feasible to replicate the work on a home machine. I'll provide a stand alone R script that can be run on an AWS server if one cares to do so (it will take 121 minutes of processing).
 
 ```{r, echo=FALSE}
 
@@ -53,7 +55,7 @@ if (require("caret", warn.conflicts=FALSE, quietly=TRUE) == FALSE)
 
 ```
 ### Cleaning
-The original training data has several columns that were considered not useful (say, using engineering jugement). So, I cleaned the data of columns that were mostly NA or empty (mostly meaning less than 10% data) and removed the first 6 columns (user name, new window data, and time of sample data). (At the last minute I tested with num_window column to produce a even better result so I've added it back in.). 
+The original training data has several columns that were considered not useful (say, using engineering judgement). So, I cleaned the data of columns that were mostly NA or empty (mostly meaning less than 10% data) and removed the first 6 columns (user name, new window data, and time of sample data). (At the last minute I tested with num_window column to produce a even better result so I've added it back in.). 
 ```{r}
 #read training data and replace "#DIV/0!" with "NA"
 traingdata <- read.csv("pml-training.csv", na.strings=c("#DIV/0!","NA"))
@@ -70,7 +72,7 @@ naIndexs <- append(1:6, naIndexs)
 #now remove these columns from the dataset
 cleandata <- traingdata[,-naIndexs]
 ```
-Now using the caret package to split the provide training data into a training/verification split (so I can avoid using the provided test data until the very end of this exploritory exercise).
+Now using the caret package to split the provide training data into a training/verification split (so I can avoid using the provided test data until the very end of this exploratory exercise).
 ```{r}
 set.seed(12345)
 inTrain <- createDataPartition(y=cleandata$classe, p=0.6, list=FALSE)
@@ -91,13 +93,13 @@ nearZeroVar(cleantraining,saveMetrics=TRUE)
 modFit <- readRDS("rfFullModel2b.rds") #load the selected model fit
 
 ```
-I tried an number of classification techniques but quickly selected and concentrated on random forest. The additional work done can be found in my github repository (see the _Project.R_ file for the original work. Also look at _Project Remote.R_ for the turning work specificly done using random forest). The tuning work done was an effort to increase the cross-validation and random predictor selection done by caret train (since I had the CPU and memory horsepower on AWS, why not?) Here is the dump of the selected model fit using the following turning parameters for caret train:
+I tried an number of classification techniques but quickly selected and concentrated on random forest. The additional work done can be found in my github repository (see the _Project.R_ file for the original work. Also look at _Project Remote.R_ for the turning work specifically done using random forest). The tuning work done was an effort to increase the cross-validation and random predictor selection done by caret train (since I had the CPU and memory horsepower on AWS, why not?) Here is the dump of the selected model fit using the following turning parameters for caret train:
 ```{r,eval=FALSE}
 set.seed(4532)
 ctrl <- trainControl(method = "repeatedcv", repeats = 5)
 modFit <- train(classe ~ ., data = cleantraining, method = "rf",prox=TRUE, trControl = ctrl, tuneLength=6) #took 7284.488 seconds to train
 ```
-The model fit shows the followng results and plot
+The model fit shows the following results and plot
 ```{r,echo=FALSE}
 modFit
 plot(modFit)
