@@ -1,0 +1,215 @@
+---
+title: "R on AWS"
+author: "peter partch"
+date: "October 23, 2015"
+output: html_document
+---
+
+_last update October 24, 2015_
+
+## Summary
+This is a brief description of how to setup a single AWS instance in order to execute R. Specifically, these instructions show how to install the caret package (an install which is a bit more complex than expected). We will:
+
+* configure and start an AWS EC2 Linux instance
+* install R
+* install RStudio Server
+* install caret package
+* setup your local computer to access RStudio via a web browser
+* setup an SSH client and SCP client application to transfer files
+
+At some point in the future I'll try to setup a cluster of R servers to see how well (and how to configure) such a task.
+
+### References
+* <https://www.kaggle.com/forums/f/15/kaggle-forum/t/4092/how-to-tune-rf-parameters-in-practice>
+* <https://blogs.aws.amazon.com/bigdata/post/Tx3IJSB6BMHWZE5/Running-R-on-AWS>
+* <http://www.r-bloggers.com/instructions-for-installing-using-r-on-amazon-ec2/>
+* <http://www.stat.yale.edu/~jay/EC2/CreateFromScratch.html>
+
+### Some Warnings and Notes
+
+WARNING: do not leave one of these large instances running for longer than you need (my runs were from about 37 minutes up to about an 1.5 hours). For the instance type I describe below will cost about $6 to $8 USD per run of caret 
+
+NOTE: after you setup your EC2 instance with RStudio and you shut it down and restart it, then occassionally RStudio server will not start. If this happens, then you will not be able to attach your web browswer to the instanace. To fix this, use your SSH client to attached to the instance and explicity start the service like so:
+```{r, eval=FALSE}
+> sudo rstudio-server start
+```
+
+## Setup Steps
+
+1. go to the AWS web site and sign into the AWS console <http://aws.amazon.com/>
+1. click on the EC2 link
+1. Click on the Launch Instance button
+1. select Amazon Linux AMI 64 bit (should be first item in list)
+1. choose instance type: you need some big iron...so I choose memory optimized  r3.4xlarge (16 vcpu/122 GByte ram)
+1. configure instance details : leave default
+1. configure add storage : leave default
+1. tag instance: name if if you wish
+1. Configure security groups (leave SSH but change your source to My IP)
+    1. Add Custom TCP rule and change port to 8787 and source to My IP (port 8787 is used by RStudio Server)
+    1. Add HTTP rule for port 80 and change source to My IP
+1. press the Review and Lanuch button
+1. press Launch (you will be asked for a key pair. Create one if you have not done so already and save the key file for use when connecting to your instance with an SSH client.)
+1. The instance will take a few minutes to launch. Go to the instances view to see when it is done starting up (Status Checks will equal 2/2). Copy the public IP address of this instance....you will need it for the browser and SSH and SCP clients)
+1. start your SSH client (on Windows this will probably be PuTTY <http://www.chiark.greenend.org.uk/~sgtatham/putty/download.html>)
+    * Note that in order to use your private key, you will need to convert the provided key file to a form that Putty will understand. I'll provide info on how to do this soon)
+1. through the SSH console, you will need to install R and RStudio server like so:
+
+```{r, eval=FALSE}
+sudo su
+yum update
+yum install -y R
+wget https://download2.rstudio.org/rstudio-server-rhel-0.99.465-x86_64.rpm
+yum install -y --nogpgcheck rstudio-server-rhel-0.99.465-x86_64.rpm
+
+```
+
+15. now add a user and password using useradd (the addition of the password 'activates' the account). For example, add a user account 'foobar'
+
+```{r, eval=FALSE}
+useradd foobar
+passwd foobar
+
+```
+
+16. You will be installing the caret package using RStudio via your web broswer, but you will need to do one more thing via the SSH console to allow this install to succeed. You need to enable the Extra Packages for Enterprise Linux (EPEL) repository. You can do this by following these steps:
+    1. open the /etc/yum.repos.d/epel.repo file
+    1. change enabled=0 to enabled=1
+17. Afer you do all the above and get the instance running, take the public IP address of your instance and launch your local web browser to attach to the RStudio server on your instance. Type into the broswer address bar; <instance IP>:8787
+18. From RStudio you can install the caret package, but for some reason I need to do it twice for the package to fully install. So run the following
+```{r, eval=FALSE}
+install.packages("caret", dependencies = c("Depends", "Suggests"))
+```
+followed by this:
+```{r,eval=FALSE}
+install.packages("caret")
+```
+TO fully leverage the large number of virtual processors (and drive the CPU utilization to the 90% level), do the following prior to making calls to caret:
+```{r,eval=FALSE}
+if (require("doParallel") == FALSE)
+{
+  install.packages("doParallel")
+  library(doParallel)
+}
+registerDoParallel(cores = 16)
+
+```
+setting the cores to the number of virtual CPU's on the instance will cause the CPU load to reach, on average, 99%
+
+Below, I'll detail some of the configurations that I've tried and the time to completion of the call to caret train function.
+
+## Results on a AWS r3.4xlarge instance
+
+r3.4xlarge => (16 vcpu with 122 GByte ram)
+
+Note: the following results were after configuring registerDoParallel(cores = 12). This will drive the CPU load to about 75% on average. The input training set was comprised of 11776 samples of 53 variables
+
+The following took 14 seconds to train:
+```{r,eval=FALSE}
+modelFit <- train(classe ~ .,data=cleantraining,method="rpart") 
+CART 
+
+11776 samples
+   52 predictor
+    5 classes: 'A', 'B', 'C', 'D', 'E' 
+
+No pre-processing
+Resampling: Bootstrapped (25 reps) 
+Summary of sample sizes: 11776, 11776, 11776, 11776, 11776, 11776, ... 
+Resampling results across tuning parameters:
+
+  cp          Accuracy   Kappa      Accuracy SD  Kappa SD  
+  0.03909587  0.4982238  0.3495050  0.06726948   0.10904554
+  0.03946369  0.4891564  0.3378854  0.06471875   0.10489720
+  0.11449929  0.3274193  0.0681493  0.03917568   0.06172252
+
+Accuracy was used to select the optimal model using  the largest value.
+The final value used for the model was cp = 0.03909587. 
+
+```
+
+The following took 2242.371 seconds to train (37 mins):
+```{r,eval=FALSE}
+modFit <- train(classe ~ .,data=cleantraining,method="rf",prox=TRUE) 
+Random Forest 
+
+11776 samples
+   52 predictor
+    5 classes: 'A', 'B', 'C', 'D', 'E' 
+
+No pre-processing
+Resampling: Bootstrapped (25 reps) 
+Summary of sample sizes: 11776, 11776, 11776, 11776, 11776, 11776, ... 
+Resampling results across tuning parameters:
+
+  mtry  Accuracy   Kappa      Accuracy SD  Kappa SD   
+   2    0.9856310  0.9818151  0.002437604  0.003079937
+  27    0.9862676  0.9826221  0.002120590  0.002679979
+  52    0.9810900  0.9760690  0.003462044  0.004383087
+
+Accuracy was used to select the optimal model using  the largest value.
+The final value used for the model was mtry = 27. 
+
+```
+
+The following took 4248.976 seconds to train (71 mins):
+```{r,eval=FALSE}
+modFit <- train(classe ~ .,data=cleantraining,method="rf",prox=TRUE, tuneLength=6) 
+Random Forest 
+
+11776 samples
+   52 predictor
+    5 classes: 'A', 'B', 'C', 'D', 'E' 
+
+No pre-processing
+Resampling: Bootstrapped (25 reps) 
+Summary of sample sizes: 11776, 11776, 11776, 11776, 11776, 11776, ... 
+Resampling results across tuning parameters:
+
+  mtry  Accuracy   Kappa      Accuracy SD  Kappa SD   
+   2    0.9855775  0.9817480  0.002603364  0.003289591
+  12    0.9885977  0.9855707  0.001943201  0.002457052
+  22    0.9871198  0.9837002  0.001892569  0.002392090
+  32    0.9852786  0.9813704  0.002042915  0.002582105
+  42    0.9835056  0.9791267  0.002545672  0.003216135
+  52    0.9810524  0.9760220  0.003045825  0.003854079
+
+Accuracy was used to select the optimal model using  the largest value.
+The final value used for the model was mtry = 12. 
+```
+
+The following took 7284.488 to train (121 mins):
+```{r,eval=FALSE}
+ctrl <- trainControl(method = "repeatedcv", repeats = 5)
+modFit2b <- train(classe ~ ., data = cleantraining, method = "rf",prox=TRUE, trControl = ctrl, tuneLength=6) 
+Random Forest 
+
+11776 samples
+   52 predictor
+    5 classes: 'A', 'B', 'C', 'D', 'E' 
+
+No pre-processing
+Resampling: Cross-Validated (10 fold, repeated 5 times) 
+Summary of sample sizes: 10598, 10597, 10600, 10600, 10598, 10597, ... 
+Resampling results across tuning parameters:
+
+  mtry  Accuracy   Kappa      Accuracy SD  Kappa SD   
+   2    0.9899796  0.9873232  0.002728482  0.003452724
+  12    0.9922894  0.9902457  0.002473756  0.003129607
+  22    0.9907948  0.9883552  0.002826900  0.003576547
+  32    0.9894872  0.9867010  0.002906041  0.003676704
+  42    0.9882643  0.9851538  0.003044375  0.003851206
+  52    0.9872792  0.9839077  0.002915181  0.003687804
+
+Accuracy was used to select the optimal model using  the largest value.
+The final value used for the model was mtry = 12. 
+```
+
+Finally, A comparison of using default parallel support versus doParallel with cores = 12 (to attain 75% CPU load) versus cores = 16 (to attain 99% CPU load) for a given train run on a AWS Linux image on r3.4xlarge (16 vcpu's and 122 Gbyte Ram).
+
+* default parallel (uses 1/2 available cores) will drive the instance to avg 50% CPU load
+* registerDoParallel(cores = 12) will drive the instance to an average of 75% CPU load and take 37 minutes to complete the train function
+* registerDoParallel(cores = 16) will drive the instance to an average of 99.7% CPU load and take 34 minutes to complete the train function
+
+
+
+
